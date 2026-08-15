@@ -1,0 +1,87 @@
+# Production overlay for MEMORY OS
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+
+services:
+  api:
+    environment:
+      ENVIRONMENT: production
+      MEMORY_OS_ALLOW_ANON: "false"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:?API_KEY_PEPPER required}
+      METRICS_TOKEN: ${METRICS_TOKEN:?METRICS_TOKEN required}
+      RATE_LIMIT_ENABLED: "true"
+      POSTGRES_RLS_ENABLED: "true"
+      USAGE_METERING_ENABLED: "true"
+      QUOTA_ENFORCEMENT_ENABLED: "true"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+  dashboard:
+    build:
+      context: ./dashboard
+      args:
+        NEXT_PUBLIC_MEMORY_OS_API_URL: ${NEXT_PUBLIC_MEMORY_OS_API_URL:-http://localhost:8000}
+    environment:
+      NODE_ENV: production
+      MEMORY_OS_API_URL: http://api:8000
+      NEXT_PUBLIC_MEMORY_OS_API_URL: ${NEXT_PUBLIC_MEMORY_OS_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://memoryos:memoryos@postgres:5432/memoryos
+      REDIS_URL: redis://redis:6379/0
+      PYTHONPATH: /app/api:/app
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    command: celery -A worker.celery_app worker --loglevel=info -Q memoryos
+
+  worker-beat:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      PYTHONPATH: /app/api:/app
+    depends_on:
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    command: celery -A worker.celery_app beat --loglevel=info
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./infra/monitoring/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    secrets:
+      - metrics_token
+
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD required}
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    volumes:
+      - ./infra/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports: ["9093:9093"]
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+secrets:
+  metrics_token:
+    environment: METRICS_TOKEN

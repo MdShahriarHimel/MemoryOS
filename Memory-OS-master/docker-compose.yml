@@ -1,0 +1,123 @@
+version: "3.9"
+
+# MEMORY OS local stack. Model-independent: no LLM/embedding service anywhere.
+# Postgres is the source of truth; pgvector powers vector search. Redis, Neo4j
+# and OpenSearch back the worker/graph/keyword paths as they come online.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: memoryos
+      POSTGRES_PASSWORD: memoryos
+      POSTGRES_DB: memoryos
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memoryos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/memoryos-graph
+    ports: ["7474:7474", "7687:7687"]
+    volumes: ["neo4jdata:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  opensearch:
+    image: opensearchproject/opensearch:2.17.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports: ["9200:9200"]
+    volumes: ["osdata:/usr/share/opensearch/data"]
+
+  api:
+    build: { context: ./services/api }
+    environment:
+      DATABASE_URL: postgresql+asyncpg://memoryos:memoryos@postgres:5432/memoryos
+      REDIS_URL: redis://redis:6379/0
+      NEO4J_URI: bolt://neo4j:7687
+      OPENSEARCH_URL: http://opensearch:9200
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:-dev-pepper}
+      MEMORY_OS_ALLOW_ANON: "true"
+      PROMETHEUS_ENABLED: "true"
+      RATE_LIMIT_ENABLED: "true"
+      OBJECT_STORAGE_BACKEND: s3
+      S3_BUCKET: memory-os
+      S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: memoryos
+      AWS_SECRET_ACCESS_KEY: memoryos-secret
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/v1/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  dashboard:
+    build:
+      context: ./dashboard
+      args:
+        NEXT_PUBLIC_MEMORY_OS_API_URL: http://localhost:8000
+    environment:
+      NEXT_PUBLIC_MEMORY_OS_API_URL: http://localhost:8000
+      MEMORY_OS_API_URL: http://api:8000
+    ports: ["3000:3000"]
+    depends_on:
+      api: { condition: service_healthy }
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: memoryos
+      MINIO_ROOT_PASSWORD: memoryos-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    depends_on:
+      api: { condition: service_healthy }
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: memoryos
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3001:3000"]
+    depends_on: [prometheus]
+
+volumes:
+  pgdata:
+  neo4jdata:
+  osdata:
+  miniodata:

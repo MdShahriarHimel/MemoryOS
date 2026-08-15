@@ -1,0 +1,2 @@
+[console_scripts]
+memoryos = memoryos_cli.main:app

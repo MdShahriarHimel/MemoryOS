@@ -1,0 +1,53 @@
+name: Dashboard CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "dashboard/**"
+      - ".github/workflows/dashboard-ci.yml"
+  pull_request:
+    paths:
+      - "dashboard/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_MEMORY_OS_API_URL: http://localhost:8000
+      - run: npx playwright install chromium
+        env:
+          PLAYWRIGHT_INSTALL: "1"
+      - name: Start API for E2E
+        working-directory: services/api
+        run: |
+          pip install -r requirements.txt
+          PYTHONPATH=. MEMORY_OS_ALLOW_ANON=false DATABASE_URL=sqlite+aiosqlite:///./e2e_ci.db uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          sleep 3
+      - name: Start dashboard for E2E
+        working-directory: dashboard
+        run: npm run start &
+        env:
+          MEMORY_OS_API_URL: http://127.0.0.1:8000
+          NEXT_PUBLIC_MEMORY_OS_API_URL: http://127.0.0.1:8000
+      - run: sleep 5
+        working-directory: dashboard
+      - run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_MEMORY_OS_API_URL: http://localhost:8000
+          MEMORY_OS_API_URL: http://127.0.0.1:8000
+          BASE_URL: http://localhost:3000

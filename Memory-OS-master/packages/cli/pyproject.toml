@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memoryos-cli"
+version = "0.3.0"
+description = "Production-grade CLI for MEMORY OS"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.28",
+  "typer>=0.12",
+  "rich>=13.7",
+]
+
+[project.scripts]
+memoryos = "memoryos_cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["memoryos_cli*"]

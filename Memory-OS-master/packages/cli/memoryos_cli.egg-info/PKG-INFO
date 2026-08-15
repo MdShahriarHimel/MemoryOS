@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: memoryos-cli
+Version: 0.2.0
+Summary: Production-grade CLI for MEMORY OS
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.28
+Requires-Dist: typer>=0.12
+Requires-Dist: rich>=13.7

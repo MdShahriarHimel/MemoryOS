@@ -1,0 +1,41 @@
+name: SDK CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "packages/**"
+      - ".github/workflows/sdk-ci.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: python -m compileall packages/sdk-python/memoryos
+      - run: pip install -e packages/sdk-python
+      - run: npm run build
+        working-directory: packages/sdk-typescript
+      - name: SDK smoke against API
+        working-directory: services/api
+        run: |
+          pip install -r requirements.txt
+          PYTHONPATH=. MEMORY_OS_ALLOW_ANON=true DATABASE_URL=sqlite+aiosqlite:///./sdk_ci.db uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          sleep 3
+          cd ../../packages/sdk-python
+          python -c "
+          from memoryos import MemoryOS
+          c = MemoryOS(base_url='http://127.0.0.1:8000')
+          m = c.memory.create('SDK smoke test')
+          assert m['id']
+          print('python sdk ok')
+          "

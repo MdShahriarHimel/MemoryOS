@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memoryos-worker-beat
+  namespace: memory-os
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: memoryos-worker-beat }
+  template:
+    metadata:
+      labels: { app: memoryos-worker-beat }
+    spec:
+      containers:
+        - name: beat
+          image: memoryos/worker:latest
+          command: ["celery", "-A", "worker.celery_app", "beat", "--loglevel=info"]
+          envFrom:
+            - configMapRef: { name: memoryos-config }
+            - secretRef: { name: memoryos-secrets }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits: { cpu: "250m", memory: "256Mi" }

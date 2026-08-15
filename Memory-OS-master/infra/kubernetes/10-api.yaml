@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memoryos-api
+  namespace: memory-os
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: memoryos-api }
+  template:
+    metadata:
+      labels: { app: memoryos-api }
+    spec:
+      containers:
+        - name: api
+          image: memoryos/api:latest
+          ports: [{ containerPort: 8000 }]
+          envFrom:
+            - configMapRef: { name: memoryos-config }
+            - secretRef: { name: memoryos-secrets }
+          readinessProbe:
+            httpGet: { path: /v1/ready, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /v1/health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memoryos-api
+  namespace: memory-os
+spec:
+  selector: { app: memoryos-api }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: memoryos-api-hpa
+  namespace: memory-os
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: memoryos-api
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

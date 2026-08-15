@@ -1,0 +1,29 @@
+groups:
+  - name: memoryos
+    rules:
+      - alert: MemoryOSApiDown
+        expr: up{job="memory-os-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: MEMORY OS API is unreachable
+
+      - alert: MemoryOSHighErrorRate
+        expr: |
+          sum(rate(memoryos_http_requests_total{status=~"5.."}[5m]))
+          / sum(rate(memoryos_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: API 5xx error rate above 5%
+
+      - alert: MemoryOSHighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(memoryos_http_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: API p95 latency above 2s

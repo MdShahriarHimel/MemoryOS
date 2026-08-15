@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: MEMORY OS
+    orgId: 1
+    folder: MEMORY OS
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

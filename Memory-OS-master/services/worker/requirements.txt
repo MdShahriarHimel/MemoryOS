@@ -1,0 +1,4 @@
+celery==5.4.0
+redis==5.2.1
+# The worker imports the API app package for models/engines:
+-e ../api
